@@ -20,18 +20,39 @@ The script performs the following core actions automatically:
 - Outbound connectivity towards `https://get.k3s.io` & upstream registry endpoints depending on your selected setup.
 
 ### Usage
-Start by granting execution rights on the file, then run it passing administrative (`sudo`/`root`) permissions.
+Start by granting execution rights on the scripts, then run them passing administrative (`sudo`/`root`) permissions.
 
+#### 1. Installation
 ```bash
 chmod +x install_k3s.sh
 sudo ./install_k3s.sh
 ```
-
 Follow the interactive prompts that let you tune your server roles, firewall preferences, and registry endpoints.
 
+#### 2. Health Checking & Diagnostics
+To verify your cluster's health or troubleshoot issues (e.g. failing pods, high CPU/RAM usage), use the included health check script:
+```bash
+chmod +x check_k3s_health.sh
+sudo ./check_k3s_health.sh
+```
+This script acts as a diagnostic tool checking:
+- Node and Control Plane (API) readiness
+- Resource usage down to the Top 10 heavy Pods
+- Problematic, evicted, or crashing workloads
+- Important K3s backend paths (Logs, Config files, Binaries)
+- Storage / Disk Pressure warnings
+
 ### Logs and Reporting
-The script logs thoroughly its execution details. You can review the logs output directly:
-- **System Execution Logs**: `/var/log/k3s_install.log`
-- **Installation Summary Form**: `/root/k3s_install_report.txt`
+The scripts log thoroughly their execution details. You can review the output directly:
+- **System Installation Logs**: `/var/log/k3s_install.log`
+- **Installation Summary**: `/root/k3s_install_report.txt`
+- **Health Check Report**: `/root/k3s_health_report_YYYYMMDD_HHMMSS.txt`
+
+### Key K3s Paths Reference
+If you need to administer the cluster manually post-installation:
+- **Kubeconfig**: `/etc/rancher/k3s/k3s.yaml`
+- **Containerd Logs**: `/var/lib/rancher/k3s/agent/containerd/containerd.log`
+- **Data directory**: `/var/lib/rancher/k3s/`
+- **Binary Directory**: `/usr/local/bin/k3s`
 
 If encountering node joining issues or misconfigured firewalls, check these logs to discover misalignments or check if any network component got blocked or improperly routed.
