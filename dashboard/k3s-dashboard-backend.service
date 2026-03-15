@@ -1,0 +1,12 @@
+[Unit]
+Description=K3s Dashboard Backend Gatherer
+After=k3s.service
+
+[Service]
+Type=simple
+ExecStart=/opt/k3s-dashboard/k3s_dashboard_backend.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -42,6 +42,26 @@ This script acts as a diagnostic tool checking:
 - Important K3s backend paths (Logs, Config files, Binaries)
 - Storage / Disk Pressure warnings
 
+#### 3. Real-Time Web Dashboard
+To deploy a lightweight, real-time HTML monitoring dashboard over port 8080 without external dependencies:
+```bash
+cd dashboard
+chmod +x install_dashboard.sh
+sudo ./install_dashboard.sh
+```
+
+**How to Access & Use the Dashboard:**
+1. Open a web browser on any machine that can reach your K3s server.
+2. Navigate to: `http://<SERVER_IP>:8080`
+3. The dashboard UI will automatically refresh its data **every 3 seconds** without needing to manually reload the page.
+
+**Dashboard Features:**
+- **Live Node Metrics**: View your server's assigned CPU and Memory allocations dynamically.
+- **Top Workloads**: View up-to-date pods, their underlying Node, and the time they were created.
+- **Filtering**: Two dropdowns allow slicing the pods by **Namespace** (e.g. `kube-system`) or **Health Status** ("Running" vs "Failing").
+- **Interactive Restart Counters**: Instantly spot pods stuck in `CrashLoopBackOff` from the Restarts column.
+- **Real-Time Warnings**: A dedicated Event log at the bottom aggregates cluster warnings (e.g., DiskPressure, FailedScheduling, ImagePull errors).
+
 ### Logs and Reporting
 The scripts log thoroughly their execution details. You can review the output directly:
 - **System Installation Logs**: `/var/log/k3s_install.log`
