@@ -62,6 +62,14 @@ sudo ./install_dashboard.sh
 - **Interactive Restart Counters**: Instantly spot pods stuck in `CrashLoopBackOff` from the Restarts column.
 - **Real-Time Warnings**: A dedicated Event log at the bottom aggregates cluster warnings (e.g., DiskPressure, FailedScheduling, ImagePull errors).
 
+#### 4. Kubectl Interactive Helper
+To make cluster management easier without memorizing `kubectl` syntax, a helper script automatically pulls active Namespaces, Pods, Deployments and Nodes and offers you numbered options to interact with them safely:
+```bash
+chmod +x kubectl_helper.sh
+sudo ./kubectl_helper.sh
+```
+Use the arrow keys and numbers to jump into a pod's Shell, check its top 100 log lines live, or drain a Node.
+
 ### Logs and Reporting
 The scripts log thoroughly their execution details. You can review the output directly:
 - **System Installation Logs**: `/var/log/k3s_install.log`
