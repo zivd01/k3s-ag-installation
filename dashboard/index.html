@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>K3s Native Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -43,6 +44,7 @@
             background: -webkit-linear-gradient(45deg, var(--accent), #818cf8);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
         .status-badge {
@@ -207,6 +209,26 @@
         <!-- Rendered via JS -->
     </div>
 
+    <!-- Analysis Section -->
+    <h2 style="font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1rem;">Resource Analysis: Top Consumer</h2>
+    <div class="grid" id="top-pod-container" style="margin-bottom: 1rem;">
+        <div class="card"><div style="text-align:center; color: var(--text-muted);">Waiting for metrics...</div></div>
+    </div>
+    
+    <div class="card" style="margin-bottom: 2rem;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+            <h3>Top Pod Usage History</h3>
+            <select id="time-filter" class="select-styled" style="min-width: 150px;">
+                <option value="5">Last 5 Minutes</option>
+                <option value="15">Last 15 Minutes</option>
+                <option value="60">Last 60 Minutes</option>
+            </select>
+        </div>
+        <div style="height: 300px; width: 100%;">
+            <canvas id="usageChart"></canvas>
+        </div>
+    </div>
+
     <!-- Pods Table -->
     <h2 style="font-size: 1.25rem; margin-bottom: 1rem;">Workloads (Pods)</h2>
     <div class="table-container">
@@ -245,9 +267,26 @@
         </table>
     </div>
 
-
     <script>
         let k3sData = null;
+        let chartInstance = null;
+        let topPodName = null;
+        let topPodNs = null;
+
+        // Resource Parsers
+        function parseCPU(str) {
+            if(!str) return 0;
+            if(str.endsWith('m')) return parseInt(str) / 1000;
+            if(str.endsWith('n')) return parseInt(str) / 1000000000;
+            return parseFloat(str);
+        }
+        function parseMem(str) {
+            if(!str) return 0;
+            if(str.endsWith('Mi')) return parseInt(str);
+            if(str.endsWith('Gi')) return parseInt(str) * 1024;
+            if(str.endsWith('Ki')) return parseInt(str) / 1024;
+            return parseInt(str) / 1048576; // bytes to Mi
+        }
 
         function fetchMetrics() {
             fetch('data.json')
@@ -258,6 +297,8 @@
                     document.getElementById('conn-status').innerHTML = '<div class="pulse"></div> Live';
                     document.getElementById('last-updated').innerText = 'Last updated: ' + new Date(data.timestamp).toLocaleTimeString();
                     renderDashboard();
+                    renderAnalysis();
+                    fetchHistoryAndDraw();
                 })
                 .catch(err => {
                     console.error("Failed to fetch K3s data", err);
@@ -273,6 +314,7 @@
         // UI Event Listeners
         document.getElementById('namespace-filter').addEventListener('change', renderDashboard);
         document.getElementById('status-filter').addEventListener('change', renderDashboard);
+        document.getElementById('time-filter').addEventListener('change', fetchHistoryAndDraw);
 
         function calculateAge(creationTimestamp) {
             const diffMs = new Date() - new Date(creationTimestamp);
@@ -281,6 +323,158 @@
             const diffMins = Math.round(((diffMs % 86400000) % 3600000) / 60000); // minutes
             return diffDays > 0 ? `${diffDays}d ${diffHrs}h` : `${diffHrs}h ${diffMins}m`;
         }
+
+        function renderAnalysis() {
+            if(!k3sData || !k3sData.metrics || !k3sData.metrics.items) return;
+            
+            let maxUsageRatio = -1;
+            let topPod = null;
+            let topPodMetrics = null;
+
+            k3sData.metrics.items.forEach(m => {
+                const podSpec = k3sData.pods.items.find(p => p.metadata.name === m.metadata.name && p.metadata.namespace === m.metadata.namespace);
+                if(!podSpec) return;
+                
+                let usedMem = 0, usedCpu = 0;
+                m.containers.forEach(c => {
+                    usedMem += parseMem(c.usage.memory);
+                    usedCpu += parseCPU(c.usage.cpu);
+                });
+                
+                let limitMem = 0, reqMem = 0, limitCpu = 0, reqCpu = 0;
+                podSpec.spec.containers.forEach(c => {
+                    if(c.resources?.limits) {
+                        limitMem += parseMem(c.resources.limits.memory);
+                        limitCpu += parseCPU(c.resources.limits.cpu);
+                    }
+                    if(c.resources?.requests) {
+                        reqMem += parseMem(c.resources.requests.memory);
+                        reqCpu += parseCPU(c.resources.requests.cpu);
+                    }
+                });
+                
+                // Calculate pressure score (Memory focus) or fallback to absolute
+                let score = 0;
+                if(limitMem > 0) score = usedMem / limitMem; 
+                else if(reqMem > 0) score = usedMem / reqMem;
+                else score = usedMem / 1024; // If no limits, rank by absolute memory footprint
+
+                if(score > maxUsageRatio) {
+                    maxUsageRatio = score;
+                    topPod = m.metadata;
+                    topPodMetrics = { usedMem, usedCpu, limitMem, reqMem, limitCpu, reqCpu, score };
+                }
+            });
+
+            if(topPod) {
+                topPodName = topPod.name;
+                topPodNs = topPod.namespace;
+                
+                const pct = topPodMetrics.limitMem > 0 ? ((topPodMetrics.usedMem / topPodMetrics.limitMem)*100).toFixed(1) + '%' : 'No Limit Set';
+                const severityClass = maxUsageRatio > 0.85 ? 'error' : '';
+                const severityBorder = maxUsageRatio > 0.85 ? 'border-color: var(--danger);' : 'border-color: var(--accent);';
+
+                document.getElementById('top-pod-container').innerHTML = `
+                <div class="card ${severityClass}" style="${severityBorder}">
+                    <h3>🔥 Top Consumer vs Assigned Limits</h3>
+                    <div style="font-size:1.25rem; font-weight:bold; margin-top:0.5rem; color: var(--text-main);">${topPod.name} <span class="namespace-tag" style="vertical-align: middle;">${topPod.namespace}</span></div>
+                    
+                    <div style="margin-top: 1rem; color: var(--text-main); font-size: 0.875rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 0.5rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">
+                            <span><strong>Memory Pressure:</strong> ${pct}</span>
+                            <span style="color: var(--text-muted);">Used: <strong style="color:var(--text-main)">${Math.round(topPodMetrics.usedMem)} Mi</strong> / Limit: ${topPodMetrics.limitMem ? Math.round(topPodMetrics.limitMem)+' Mi' : 'None'}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span><strong>CPU Pressure:</strong> ${topPodMetrics.limitCpu > 0 ? ((topPodMetrics.usedCpu / topPodMetrics.limitCpu)*100).toFixed(1) + '%' : 'No Limit Set'}</span>
+                            <span style="color: var(--text-muted);">Used: <strong style="color:var(--text-main)">${topPodMetrics.usedCpu.toFixed(3)} Cores</strong> / Limit: ${topPodMetrics.limitCpu ? topPodMetrics.limitCpu.toFixed(3)+' Cores' : 'None'}</span>
+                        </div>
+                    </div>
+                </div>`;
+            }
+        }
+
+        function fetchHistoryAndDraw() {
+            if(!topPodName) return;
+            const minutes = parseInt(document.getElementById('time-filter').value);
+            
+            fetch('history.jsonl')
+                .then(res => res.text())
+                .then(text => {
+                    const lines = text.trim().split('\n');
+                    const cutoffTime = new Date(Date.now() - minutes * 60000);
+                    
+                    const labels = [];
+                    const dataMem = [];
+                    const dataCpu = [];
+                    
+                    lines.forEach(line => {
+                        if(!line) return;
+                        try {
+                            const row = JSON.parse(line);
+                            const t = new Date(row.timestamp);
+                            if(t >= cutoffTime) {
+                                const pMet = row.metrics?.items?.find(m => m.metadata.name === topPodName && m.metadata.namespace === topPodNs);
+                                if(pMet) {
+                                    let uM = 0, uC = 0;
+                                    pMet.containers.forEach(c => {
+                                        uM += parseMem(c.usage.memory);
+                                        uC += parseCPU(c.usage.cpu);
+                                    });
+                                    labels.push(t.toLocaleTimeString());
+                                    dataMem.push(uM);
+                                    dataCpu.push(Number((uC * 1000).toFixed(0))); // milli-cores for chart scaling
+                                }
+                            }
+                        } catch(e) {}
+                    });
+                    
+                    if(chartInstance) chartInstance.destroy();
+                    const ctx = document.getElementById('usageChart').getContext('2d');
+                    chartInstance = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'Memory Usage (MiB)',
+                                    data: dataMem,
+                                    borderColor: '#38bdf8',
+                                    tension: 0.2,
+                                    fill: false,
+                                    yAxisID: 'y'
+                                },
+                                {
+                                    label: 'CPU Usage (mCores)',
+                                    data: dataCpu,
+                                    borderColor: '#22c55e',
+                                    tension: 0.2,
+                                    fill: false,
+                                    yAxisID: 'y1'
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { 
+                                legend: { labels: { color: '#f8fafc' } } 
+                            },
+                            scales: {
+                                x: { ticks: { color: '#94a3b8' } },
+                                y: { 
+                                    type: 'linear', display: true, position: 'left',
+                                    ticks: { color: '#38bdf8' }, title: {display: true, text: 'Memory (MiB)', color: '#38bdf8'} 
+                                },
+                                y1: { 
+                                    type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false },
+                                    ticks: { color: '#22c55e' }, title: {display: true, text: 'CPU (mCores)', color: '#22c55e'}
+                                }
+                            }
+                        }
+                    });
+                });
+        }
+
 
         function renderDashboard() {
             if (!k3sData) return;
@@ -376,7 +570,7 @@
             if(Array.isArray(eventItems)) {
                 const warnings = eventItems.filter(e => e?.type === 'Warning').reverse();
                 if(warnings.length === 0) {
-                    eventsTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--success);">No warnings found in the cluster cluster!</td></tr>`;
+                    eventsTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--success);">No warnings found in the cluster!</td></tr>`;
                 } else {
                     warnings.slice(0,10).forEach(ev => {
                         eventsTbody.innerHTML += `
