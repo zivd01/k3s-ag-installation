@@ -6,6 +6,7 @@
     <title>K3s Native Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -32,9 +33,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
+            margin-bottom: 1rem;
         }
 
         .header h1 {
@@ -45,6 +44,28 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 3px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .tab:hover {
+            color: var(--text-main);
+        }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
         }
 
         .status-badge {
@@ -178,6 +199,22 @@
             font-size: 1.5rem;
             font-weight: bold;
         }
+
+        #topology-network {
+            width: 100%;
+            height: 70vh;
+            background: var(--card-bg);
+            border-radius: 1rem;
+            border: 1px solid var(--border);
+        }
+        .topo-hint {
+            color: var(--accent);
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -192,79 +229,96 @@
         </div>
     </div>
 
-    <!-- Filters -->
-    <div class="controls">
-        <select id="namespace-filter" class="select-styled">
-            <option value="all">All Namespaces</option>
-        </select>
-        <select id="status-filter" class="select-styled">
-            <option value="all">All Pod Statuses</option>
-            <option value="running">Running / Completed</option>
-            <option value="failing">Failing / Pending / Error</option>
-        </select>
+    <div class="tabs">
+        <div class="tab active" id="tab-btn-metrics" onclick="switchTab('metrics')">Metrics & Workloads</div>
+        <div class="tab" id="tab-btn-topology" onclick="switchTab('topology')">Cluster Topology</div>
     </div>
 
-    <!-- High level Nodes info -->
-    <div class="grid" id="nodes-container">
-        <!-- Rendered via JS -->
-    </div>
-
-    <!-- Analysis Section -->
-    <h2 style="font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1rem;">Resource Analysis: Top Consumer</h2>
-    <div class="grid" id="top-pod-container" style="margin-bottom: 1rem;">
-        <div class="card"><div style="text-align:center; color: var(--text-muted);">Waiting for metrics...</div></div>
-    </div>
-    
-    <div class="card" style="margin-bottom: 2rem;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
-            <h3>Top Pod Usage History</h3>
-            <select id="time-filter" class="select-styled" style="min-width: 150px;">
-                <option value="5">Last 5 Minutes</option>
-                <option value="15">Last 15 Minutes</option>
-                <option value="60">Last 60 Minutes</option>
+    <!-- METRICS TAB -->
+    <div id="view-metrics">
+        <!-- Filters -->
+        <div class="controls">
+            <select id="namespace-filter" class="select-styled">
+                <option value="all">All Namespaces</option>
+            </select>
+            <select id="status-filter" class="select-styled">
+                <option value="all">All Pod Statuses</option>
+                <option value="running">Running / Completed</option>
+                <option value="failing">Failing / Pending / Error</option>
             </select>
         </div>
-        <div style="height: 300px; width: 100%;">
-            <canvas id="usageChart"></canvas>
+
+        <!-- High level Nodes info -->
+        <div class="grid" id="nodes-container">
+            <!-- Rendered via JS -->
+        </div>
+
+        <!-- Analysis Section -->
+        <h2 style="font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1rem;">Resource Analysis: Top Consumer</h2>
+        <div class="grid" id="top-pod-container" style="margin-bottom: 1rem;">
+            <div class="card"><div style="text-align:center; color: var(--text-muted);">Waiting for metrics...</div></div>
+        </div>
+        
+        <div class="card" style="margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                <h3>Top Pod Usage History</h3>
+                <select id="time-filter" class="select-styled" style="min-width: 150px;">
+                    <option value="5">Last 5 Minutes</option>
+                    <option value="15">Last 15 Minutes</option>
+                    <option value="60">Last 60 Minutes</option>
+                </select>
+            </div>
+            <div style="height: 300px; width: 100%;">
+                <canvas id="usageChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Pods Table -->
+        <h2 style="font-size: 1.25rem; margin-bottom: 1rem;">Workloads (Pods)</h2>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Namespace</th>
+                        <th>Name</th>
+                        <th>Node</th>
+                        <th>Status</th>
+                        <th>Restarts</th>
+                        <th>Age</th>
+                    </tr>
+                </thead>
+                <tbody id="pods-tbody">
+                    <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading pods...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Events Table -->
+        <h2 style="font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1rem;">Recent Cluster Warnings</h2>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Namespace</th>
+                        <th>Component</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody id="events-tbody">
+                    <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading events...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <!-- Pods Table -->
-    <h2 style="font-size: 1.25rem; margin-bottom: 1rem;">Workloads (Pods)</h2>
-    <div class="table-container">
-        <table>
-            <thead>
-                <tr>
-                    <th>Namespace</th>
-                    <th>Name</th>
-                    <th>Node</th>
-                    <th>Status</th>
-                    <th>Restarts</th>
-                    <th>Age</th>
-                </tr>
-            </thead>
-            <tbody id="pods-tbody">
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading pods...</td></tr>
-            </tbody>
-        </table>
-    </div>
 
-    <!-- Events Table -->
-    <h2 style="font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1rem;">Recent Cluster Warnings</h2>
-    <div class="table-container">
-        <table>
-            <thead>
-                <tr>
-                    <th>Time</th>
-                    <th>Namespace</th>
-                    <th>Component</th>
-                    <th>Message</th>
-                </tr>
-            </thead>
-            <tbody id="events-tbody">
-                <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading events...</td></tr>
-            </tbody>
-        </table>
+    <!-- TOPOLOGY TAB -->
+    <div id="view-topology" style="display: none;">
+        <div class="topo-hint">
+            <span>💡 <strong>Interactive Drill-down:</strong> Click on a Node to see its Namespaces. Click on a Namespace to see its Pods. Click the background to reset.</span>
+        </div>
+        <div id="topology-network"></div>
     </div>
 
     <script>
@@ -272,6 +326,27 @@
         let chartInstance = null;
         let topPodName = null;
         let topPodNs = null;
+        let activeTab = 'metrics';
+
+        // Topology Variables
+        let network = null;
+        let networkNodes = new vis.DataSet([]);
+        let networkEdges = new vis.DataSet([]);
+        let expandedNodes = { 'cluster': true }; // cluster is always root
+
+        function switchTab(tabId) {
+            activeTab = tabId;
+            document.getElementById('view-metrics').style.display = tabId === 'metrics' ? 'block' : 'none';
+            document.getElementById('view-topology').style.display = tabId === 'topology' ? 'block' : 'none';
+            
+            document.getElementById('tab-btn-metrics').className = 'tab' + (tabId === 'metrics' ? ' active' : '');
+            document.getElementById('tab-btn-topology').className = 'tab' + (tabId === 'topology' ? ' active' : '');
+
+            if(tabId === 'topology') {
+                if(!network) initTopology();
+                updateTopologyData();
+            }
+        }
 
         // Resource Parsers
         function parseCPU(str) {
@@ -296,9 +371,14 @@
                     document.getElementById('conn-status').className = 'status-badge';
                     document.getElementById('conn-status').innerHTML = '<div class="pulse"></div> Live';
                     document.getElementById('last-updated').innerText = 'Last updated: ' + new Date(data.timestamp).toLocaleTimeString();
-                    renderDashboard();
-                    renderAnalysis();
-                    fetchHistoryAndDraw();
+                    
+                    if(activeTab === 'metrics') {
+                        renderDashboard();
+                        renderAnalysis();
+                        fetchHistoryAndDraw();
+                    } else {
+                        updateTopologyData();
+                    }
                 })
                 .catch(err => {
                     console.error("Failed to fetch K3s data", err);
@@ -318,10 +398,124 @@
 
         function calculateAge(creationTimestamp) {
             const diffMs = new Date() - new Date(creationTimestamp);
-            const diffDays = Math.floor(diffMs / 86400000); // days
-            const diffHrs = Math.floor((diffMs % 86400000) / 3600000); // hours
-            const diffMins = Math.round(((diffMs % 86400000) % 3600000) / 60000); // minutes
+            const diffDays = Math.floor(diffMs / 86400000); 
+            const diffHrs = Math.floor((diffMs % 86400000) / 3600000); 
+            const diffMins = Math.round(((diffMs % 86400000) % 3600000) / 60000); 
             return diffDays > 0 ? `${diffDays}d ${diffHrs}h` : `${diffHrs}h ${diffMins}m`;
+        }
+
+        function initTopology() {
+            const container = document.getElementById('topology-network');
+            const data = { nodes: networkNodes, edges: networkEdges };
+            const options = {
+                layout: {
+                    hierarchical: {
+                        direction: "UD",
+                        sortMethod: "directed",
+                        nodeSpacing: 180,
+                        levelSeparation: 150,
+                        parentCentralization: true
+                    }
+                },
+                physics: false,
+                nodes: {
+                    shape: 'box',
+                    margin: 10,
+                    borderWidth: 2,
+                    borderWidthSelected: 3,
+                    color: {
+                        background: '#1e293b',
+                        border: '#38bdf8',
+                        highlight: { background: '#334155', border: '#22c55e' }
+                    },
+                    font: { color: '#f8fafc', face: 'Inter', size: 14 }
+                },
+                edges: {
+                    color: '#94a3b8',
+                    smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 }
+                },
+                interaction: {
+                    hover: true,
+                    zoomView: true
+                }
+            };
+            network = new vis.Network(container, data, options);
+
+            // Click handling for Drill-down / Go-back
+            network.on("click", function (params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    expandedNodes[nodeId] = !expandedNodes[nodeId]; // Toggle
+                    updateTopologyData();
+                } else {
+                    // Clicked on background: Reset to top level
+                    Object.keys(expandedNodes).forEach(k => { if(k !== 'cluster') expandedNodes[k] = false; });
+                    updateTopologyData();
+                }
+            });
+        }
+
+        function updateTopologyData() {
+            if (!k3sData || !k3sData.nodes) return;
+            
+            let newNodes = [];
+            let newEdges = [];
+            
+            // Core Cluster Node
+            newNodes.push({ id: 'cluster', label: '🚀 Cluster\n(Root)', level: 0, font: {size: 18, bold: true}, color: {border: '#38bdf8'} });
+            
+            if (expandedNodes['cluster']) {
+                k3sData.nodes.items.forEach(node => {
+                    const nId = 'node_' + node.metadata.name;
+                    newNodes.push({
+                        id: nId,
+                        label: '🖥️ Node\n' + node.metadata.name,
+                        level: 1,
+                        color: { border: '#eab308' }
+                    });
+                    newEdges.push({ from: 'cluster', to: nId });
+                    
+                    if (expandedNodes[nId] && k3sData.pods) {
+                        const podsOnNode = k3sData.pods.items.filter(p => p.spec.nodeName === node.metadata.name);
+                        const namespaces = new Set(podsOnNode.map(p => p.metadata.namespace));
+                        
+                        namespaces.forEach(ns => {
+                            const nsId = `ns_${node.metadata.name}_${ns}`;
+                            newNodes.push({
+                                id: nsId,
+                                label: '📁 Space\n' + ns,
+                                level: 2,
+                                color: { border: '#a855f7' }
+                            });
+                            newEdges.push({ from: nId, to: nsId });
+                            
+                            if (expandedNodes[nsId]) {
+                                podsOnNode.filter(p => p.metadata.namespace === ns).forEach(pod => {
+                                    const pId = 'pod_' + pod.metadata.name;
+                                    const isOk = ['Running', 'Succeeded'].includes(pod.status.phase);
+                                    newNodes.push({
+                                        id: pId,
+                                        label: '📦 ' + pod.metadata.name + `\n(${pod.status.phase})`,
+                                        level: 3,
+                                        color: { border: isOk ? '#22c55e' : '#ef4444' },
+                                        shape: 'ellipse'
+                                    });
+                                    newEdges.push({ from: nsId, to: pId });
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // Sync with Network smoothly
+            const nodeIds = newNodes.map(n => n.id);
+            networkNodes.remove(networkNodes.getIds().filter(id => !nodeIds.includes(id)));
+            networkNodes.update(newNodes);
+
+            const edgeIds = newEdges.map(e => e.from + '_' + e.to);
+            networkEdges.clear(); // Safest way to avoid ghost edges
+            networkEdges.add(newEdges);
         }
 
         function renderAnalysis() {
@@ -353,11 +547,10 @@
                     }
                 });
                 
-                // Calculate pressure score (Memory focus) or fallback to absolute
                 let score = 0;
                 if(limitMem > 0) score = usedMem / limitMem; 
                 else if(reqMem > 0) score = usedMem / reqMem;
-                else score = usedMem / 1024; // If no limits, rank by absolute memory footprint
+                else score = usedMem / 1024; 
 
                 if(score > maxUsageRatio) {
                     maxUsageRatio = score;
@@ -422,7 +615,7 @@
                                     });
                                     labels.push(t.toLocaleTimeString());
                                     dataMem.push(uM);
-                                    dataCpu.push(Number((uC * 1000).toFixed(0))); // milli-cores for chart scaling
+                                    dataCpu.push(Number((uC * 1000).toFixed(0))); 
                                 }
                             }
                         } catch(e) {}
@@ -484,7 +677,7 @@
 
             // 1. Populate Namespace filter dynamically if empty
             const nsSelect = document.getElementById('namespace-filter');
-            if(nsSelect.options.length === 1) {
+            if(nsSelect.options.length === 1 && k3sData.pods) {
                 const namespaces = new Set(k3sData.pods.items.map(p => p.metadata.namespace));
                 Array.from(namespaces).sort().forEach(ns => {
                     const opt = document.createElement('option');
@@ -497,72 +690,74 @@
             // 2. Render Nodes
             const nodesContainer = document.getElementById('nodes-container');
             nodesContainer.innerHTML = '';
-            k3sData.nodes.items.forEach(node => {
-                const isReady = node.status.conditions.find(c => c.type === 'Ready')?.status === 'True';
-                const color = isReady ? 'text-success' : 'text-danger';
-                
-                // Memory capacity calculations
-                const memKiStr = node.status.capacity.memory.replace('Ki','');
-                const memGB = (parseInt(memKiStr) / 1024 / 1024).toFixed(1);
+            if(k3sData.nodes && k3sData.nodes.items) {
+                k3sData.nodes.items.forEach(node => {
+                    const isReady = node.status.conditions.find(c => c.type === 'Ready')?.status === 'True';
+                    const color = isReady ? 'text-success' : 'text-danger';
+                    
+                    const memKiStr = node.status.capacity.memory.replace('Ki','');
+                    const memGB = (parseInt(memKiStr) / 1024 / 1024).toFixed(1);
 
-                nodesContainer.innerHTML += `
-                <div class="card node-info">
-                    <h3>Node: ${node.metadata.name}</h3>
-                    <span class="${color}">${isReady ? 'Ready' : 'Not Ready'}</span>
-                    <div style="margin-top: 1rem; display: flex; gap: 1rem; color: var(--text-muted); font-size: 0.875rem;">
-                        <div>💻 CPU: ${node.status.capacity.cpu} Cores</div>
-                        <div>🧠 RAM: ${memGB} GB</div>
-                        <div>🔧 Roles: ${Object.keys(node.metadata.labels).filter(l => l.includes('node-role')).map(l => l.split('/')[1] || 'agent').join(', ')}</div>
-                    </div>
-                    <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.875rem;">
-                        Kubelet: ${node.status.nodeInfo.kubeletVersion} | OS: ${node.status.nodeInfo.osImage}
-                    </div>
-                </div>`;
-            });
+                    nodesContainer.innerHTML += `
+                    <div class="card node-info">
+                        <h3>Node: ${node.metadata.name}</h3>
+                        <span class="${color}">${isReady ? 'Ready' : 'Not Ready'}</span>
+                        <div style="margin-top: 1rem; display: flex; gap: 1rem; color: var(--text-muted); font-size: 0.875rem;">
+                            <div>💻 CPU: ${node.status.capacity.cpu} Cores</div>
+                            <div>🧠 RAM: ${memGB} GB</div>
+                            <div>🔧 Roles: ${Object.keys(node.metadata.labels).filter(l => l.includes('node-role')).map(l => l.split('/')[1] || 'agent').join(', ')}</div>
+                        </div>
+                        <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.875rem;">
+                            Kubelet: ${node.status.nodeInfo.kubeletVersion} | OS: ${node.status.nodeInfo.osImage}
+                        </div>
+                    </div>`;
+                });
+            }
 
             // 3. Render Pods
             const podsTbody = document.getElementById('pods-tbody');
             podsTbody.innerHTML = '';
             
-            let filteredPods = k3sData.pods.items.filter(pod => {
-                const nsMatch = (nsFilter === 'all') || (pod.metadata.namespace === nsFilter);
-                
-                let sMatch = true;
-                const phase = pod.status.phase; // Running, Pending, Succeeded, Failed, Unknown
-                if (statusFilter === 'running') sMatch = ['Running', 'Succeeded'].includes(phase);
-                if (statusFilter === 'failing') sMatch = !['Running', 'Succeeded'].includes(phase);
-                
-                return nsMatch && sMatch;
-            });
-
-            if (filteredPods.length === 0) {
-                podsTbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">No workloads matched your filters.</td></tr>`;
-            } else {
-                // Sort by namespace then name
-                filteredPods.sort((a,b) => a.metadata.namespace.localeCompare(b.metadata.namespace) || a.metadata.name.localeCompare(b.metadata.name));
-                
-                filteredPods.forEach(pod => {
-                    const statusColor = ['Running', 'Succeeded'].includes(pod.status.phase) ? 'text-success' 
-                        : (pod.status.phase === 'Pending' ? 'text-warning' : 'text-danger');
+            if(k3sData.pods && k3sData.pods.items) {
+                let filteredPods = k3sData.pods.items.filter(pod => {
+                    const nsMatch = (nsFilter === 'all') || (pod.metadata.namespace === nsFilter);
                     
-                    let restarts = 0;
-                    if(pod.status.containerStatuses) {
-                        restarts = pod.status.containerStatuses.reduce((acc, c) => acc + c.restartCount, 0);
-                    }
-
-                    podsTbody.innerHTML += `
-                    <tr>
-                        <td><span class="namespace-tag">${pod.metadata.namespace}</span></td>
-                        <td style="font-weight: 600;">${pod.metadata.name}</td>
-                        <td style="color: var(--text-muted);">${pod.spec.nodeName || 'Scheduling...'}</td>
-                        <td class="${statusColor}" style="font-weight: 600;">${pod.status.phase}</td>
-                        <td>${restarts > 0 ? `<span class="text-warning">${restarts}</span>` : '0'}</td>
-                        <td>${calculateAge(pod.metadata.creationTimestamp)}</td>
-                    </tr>`;
+                    let sMatch = true;
+                    const phase = pod.status.phase; 
+                    if (statusFilter === 'running') sMatch = ['Running', 'Succeeded'].includes(phase);
+                    if (statusFilter === 'failing') sMatch = !['Running', 'Succeeded'].includes(phase);
+                    
+                    return nsMatch && sMatch;
                 });
+
+                if (filteredPods.length === 0) {
+                    podsTbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">No workloads matched your filters.</td></tr>`;
+                } else {
+                    filteredPods.sort((a,b) => a.metadata.namespace.localeCompare(b.metadata.namespace) || a.metadata.name.localeCompare(b.metadata.name));
+                    
+                    filteredPods.forEach(pod => {
+                        const statusColor = ['Running', 'Succeeded'].includes(pod.status.phase) ? 'text-success' 
+                            : (pod.status.phase === 'Pending' ? 'text-warning' : 'text-danger');
+                        
+                        let restarts = 0;
+                        if(pod.status.containerStatuses) {
+                            restarts = pod.status.containerStatuses.reduce((acc, c) => acc + c.restartCount, 0);
+                        }
+
+                        podsTbody.innerHTML += `
+                        <tr>
+                            <td><span class="namespace-tag">${pod.metadata.namespace}</span></td>
+                            <td style="font-weight: 600;">${pod.metadata.name}</td>
+                            <td style="color: var(--text-muted);">${pod.spec.nodeName || 'Scheduling...'}</td>
+                            <td class="${statusColor}" style="font-weight: 600;">${pod.status.phase}</td>
+                            <td>${restarts > 0 ? `<span class="text-warning">${restarts}</span>` : '0'}</td>
+                            <td>${calculateAge(pod.metadata.creationTimestamp)}</td>
+                        </tr>`;
+                    });
+                }
             }
 
-            // 4. Render Events (Warnings)
+            // 4. Render Events
             const eventsTbody = document.getElementById('events-tbody');
             eventsTbody.innerHTML = '';
             
